@@ -37,6 +37,19 @@ services:
     depends_on:
       - minio
 
+  db_bootstrap:
+    build: ./services/db_bootstrap
+    entrypoint: ["/app/run.sh"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_SUPERUSER}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS}
+      POSTGRES_DB: ${POSTGRES_DEFAULT_DB}
+    volumes:
+      - ./infra/postgres:/sql:ro
+    depends_on:
+      - postgres
+
+
 volumes:
   postgres_data:
   minio_data:
