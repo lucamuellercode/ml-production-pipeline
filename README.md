@@ -114,13 +114,19 @@ docker compose down -v
 ```
 
 
-## TL ; TR
 
+# One-line Rebuild
 
-```bash 
+```bash
+
+docker compose down -v
 docker compose up -d
-docker compose build lake_seed
 docker compose run --rm lake_seed
+docker compose run --rm db_bootstrap
+docker compose run --rm warehouse_loader
+docker compose run --rm warehouse_transform
+
+
 ```
 
 

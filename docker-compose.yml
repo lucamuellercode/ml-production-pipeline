@@ -49,6 +49,44 @@ services:
     depends_on:
       - postgres
 
+  warehouse_loader:
+    build: ./services/warehouse_loader
+    environment:
+      # MinIO
+      STORAGE_ENDPOINT_URL: ${STORAGE_ENDPOINT_URL}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+
+      # Postgres (Warehouse)
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_SUPERUSER}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS}
+      POSTGRES_DB: ${POSTGRES_DEFAULT_DB}
+
+      # Dataset (optional konfigurierbar)
+      DATASET_BUCKET: datasets
+      DATASET_KEY: iris/v1/iris.csv
+      DATASET_NAME: iris
+      DATASET_VERSION: v1
+    depends_on:
+      - postgres
+      - minio
+  
+  warehouse_transform:
+    build: ./services/warehouse_transform
+    entrypoint: ["/app/run.sh"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_SUPERUSER}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS}
+      POSTGRES_DB: ${POSTGRES_DEFAULT_DB}
+    volumes:
+      - ./infra/postgres:/sql:ro
+    depends_on:
+      - postgres
+
+
+
 
 volumes:
   postgres_data:

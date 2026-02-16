@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXIST metadata.datasets (
+CREATE TABLE IF NOT EXISTS metadata.datasets (
     id BIGSERIAL PRIMARY KEY,
     name TEXT NOT NULL,
     version TEXT NOT NULL,
