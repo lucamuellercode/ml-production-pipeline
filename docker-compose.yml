@@ -34,7 +34,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       STORAGE_ENDPOINT_URL: ${STORAGE_ENDPOINT_URL}
-    depends:
+    depends_on:
       -minio
 
 volumes:
