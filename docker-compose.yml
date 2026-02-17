@@ -27,6 +27,7 @@ services:
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
+    restart: unless-stopped
 
   lake_seed:
     build: ./services/lake_seed
@@ -37,7 +38,8 @@ services:
     depends_on:
       - minio
 
-  db_bootstrap:
+  # PLATFORM (global): schemas + metadata tables
+  platform_bootstrap:
     build: ./services/db_bootstrap
     entrypoint: ["/app/run.sh"]
     environment:
@@ -45,7 +47,20 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS}
       POSTGRES_DB: ${POSTGRES_DEFAULT_DB}
     volumes:
-      - ./infra/postgres:/sql:ro
+      - ./infra/postgres/00_platform:/sql:ro
+    depends_on:
+      - postgres
+
+  # DATASET (iris): create raw/staging tables only
+  iris_bootstrap:
+    build: ./services/db_bootstrap
+    entrypoint: ["/app/run.sh"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_SUPERUSER}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS}
+      POSTGRES_DB: ${POSTGRES_DEFAULT_DB}
+    volumes:
+      - ./infra/postgres/10_datasets/iris/tables:/sql:ro
     depends_on:
       - postgres
 
@@ -64,7 +79,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS}
       POSTGRES_DB: ${POSTGRES_DEFAULT_DB}
 
-      # Dataset (optional konfigurierbar)
+      # Dataset (optional)
       DATASET_BUCKET: datasets
       DATASET_KEY: iris/v1/iris.csv
       DATASET_NAME: iris
@@ -72,20 +87,21 @@ services:
     depends_on:
       - postgres
       - minio
-  
-  warehouse_transform:
-    build: ./services/warehouse_transform
+
+  # DATASET (iris): transform raw -> staging
+  iris_transform:
+    build: ./services/db_bootstrap
     entrypoint: ["/app/run.sh"]
     environment:
       POSTGRES_USER: ${POSTGRES_SUPERUSER}
       POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS}
       POSTGRES_DB: ${POSTGRES_DEFAULT_DB}
     volumes:
-      - ./infra/postgres:/sql:ro
+      - ./infra/postgres/10_datasets/iris/transforms:/sql:ro
     depends_on:
       - postgres
-
-
+      - iris_bootstrap
+      - warehouse_loader
 
 
 volumes:

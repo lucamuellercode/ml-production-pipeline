@@ -5,8 +5,8 @@ import pandas as pd
 from sklearn.datasets import load_iris
 
 
-def get_env(name: str) -> str:
-    value = os.getenv(name)
+def env(name: str, default: str | None = None) -> str:
+    value = os.getenv(name, default)
     if not value:
         raise RuntimeError(f"Missing environment variable: {name}")
     return value
@@ -31,21 +31,28 @@ def object_exists(s3, bucket: str, key: str) -> bool:
         raise
 
 
+def build_default_iris_dataframe() -> pd.DataFrame:
+    iris = load_iris()
+    df = pd.DataFrame(iris.data, columns=iris.feature_names)
+    df["target"] = iris.target
+    return df
+
+
 def main() -> None:
-    endpoint_url = get_env("STORAGE_ENDPOINT_URL")
-    access_key = get_env("MINIO_ROOT_USER")
-    secret_key = get_env("MINIO_ROOT_PASSWORD")
+    endpoint_url = env("STORAGE_ENDPOINT_URL")
+    access_key = env("MINIO_ROOT_USER")
+    secret_key = env("MINIO_ROOT_PASSWORD")
+
+    bucket = env("DATASET_BUCKET", "datasets")
+    key = env("DATASET_KEY", "iris/v1/iris.csv")
 
     s3 = boto3.client(
         "s3",
         endpoint_url=endpoint_url,
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
-        region_name="eu-west-1",
+        region_name="us-east-1",
     )
-
-    bucket = "datasets"
-    key = "iris/v1/iris.csv"
 
     ensure_bucket(s3, bucket)
 
@@ -56,15 +63,19 @@ def main() -> None:
         print("Skipping upload (already exists).")
         return
 
-    iris = load_iris()
-    df = pd.DataFrame(iris.data, columns=iris.feature_names)
-    df["target"] = iris.target
+    # Default behavior: seed Iris demo dataset
+    df = build_default_iris_dataframe()
     csv_bytes = df.to_csv(index=False).encode("utf-8")
 
-    print(csv_bytes)
+    s3.put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=csv_bytes,
+        ContentType="text/csv",
+    )
 
-    s3.put_object(Bucket=bucket, Key=key, Body=csv_bytes, ContentType="text/csv")
-    print(f"Uploaded: s3://{bucket}/{key}")
+    print(f"Uploaded demo dataset to s3://{bucket}/{key}")
+    print(f"Rows: {len(df)}")
 
 
 if __name__ == "__main__":

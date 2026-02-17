@@ -130,6 +130,35 @@ docker compose run --rm warehouse_transform
 ```
 
 
+├── docker-compose.yml
+├── infra
+│   └── postgres
+│       ├── 00_platform
+│       │   ├── 00_schemas.sql
+│       │   └── 10_metadata_tables.sql
+│       └── 10_datasets
+│           └── iris
+│               ├── tables
+│               └── transforms
+├── README.md
+└── services
+    ├── db_bootstrap
+    │   ├── Dockerfile
+    │   └── run.sh
+    ├── lake_seed
+    │   ├── Dockerfile
+    │   └── seed.py
+    ├── warehouse_loader
+    │   ├── Dockerfile
+    │   └── loader.py
+    └── warehouse_transform
+        ├── Dockerfile
+        └── run.sh
+
+13 directories, 12 files
+
+
+
 
     
 

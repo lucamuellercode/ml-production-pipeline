@@ -1,5 +1,6 @@
 import os
 import io
+import re
 from dataclasses import dataclass
 
 import boto3
@@ -8,12 +9,23 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, URL
 
 
-
 def env(name: str, default: str | None = None) -> str:
     v = os.getenv(name, default)
     if not v:
         raise RuntimeError(f"Missing env var: {name}")
     return v
+
+
+# Strict SQL identifier validation (schema/table names)
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def ident(name: str) -> str:
+    if not _IDENTIFIER_RE.match(name):
+        raise ValueError(
+            f"Invalid identifier {name!r}. Only [A-Za-z_][A-Za-z0-9_]* is allowed."
+        )
+    return name
 
 
 @dataclass(frozen=True)
@@ -37,7 +49,10 @@ class PostgresConfig:
     port: str = "5432"
 
     def sqlalchemy_url(self) -> str:
-        return f"postgresql+psycopg2://{self.user}:{self.password}@{self.host}:{self.port}/{self.db}"
+        return (
+            f"postgresql+psycopg2://{self.user}:{self.password}"
+            f"@{self.host}:{self.port}/{self.db}"
+        )
 
 
 def make_s3_client():
@@ -67,14 +82,20 @@ def make_engine(pg: PostgresConfig) -> Engine:
     )
     return create_engine(url)
 
+
 def truncate_raw_table(engine: Engine, schema: str, table: str) -> None:
-    # @ToDo: schema/table sind hier fest. Wenn das dynamisch soll,
-    # bitte whitelist/validieren (SQL-Injection vermeiden).
+    # schema/table must be validated identifiers (avoid SQL injection).
+    schema = ident(schema)
+    table = ident(table)
     with engine.begin() as conn:
         conn.execute(text(f"TRUNCATE TABLE {schema}.{table};"))
 
 
 def load_dataframe_to_raw(engine: Engine, df: pd.DataFrame, schema: str, table: str) -> None:
+    # df.to_sql uses SQLAlchemy safely for table creation/inserts, but schema/table still
+    # come from config -> validate identifiers.
+    schema = ident(schema)
+    table = ident(table)
     df.to_sql(table, engine, schema=schema, if_exists="append", index=False)
 
 
@@ -120,22 +141,34 @@ def read_postgres_config() -> PostgresConfig:
     )
 
 
+def read_raw_target() -> tuple[str, str]:
+    """
+    Where to load the dataframe in the warehouse.
+    Defaults:
+      RAW_SCHEMA = "raw"
+      RAW_TABLE  = DATASET_NAME
+    """
+    raw_schema = env("RAW_SCHEMA", "raw")
+    raw_table = env("RAW_TABLE", env("DATASET_NAME", "iris"))
+    return ident(raw_schema), ident(raw_table)
+
 
 def main() -> None:
     ds = read_dataset_config()
     pg = read_postgres_config()
+    raw_schema, raw_table = read_raw_target()
 
     s3 = make_s3_client()
     df = read_csv_from_s3(s3, ds.bucket, ds.key)
 
     engine = make_engine(pg)
 
-    truncate_raw_table(engine, schema="raw", table="iris")
-    load_dataframe_to_raw(engine, df, schema="raw", table="iris")
+    truncate_raw_table(engine, schema=raw_schema, table=raw_table)
+    load_dataframe_to_raw(engine, df, schema=raw_schema, table=raw_table)
 
     upsert_dataset_metadata(engine, ds, row_count=len(df))
 
-    print(f"Loaded {len(df)} rows into raw.iris")
+    print(f"Loaded {len(df)} rows into {raw_schema}.{raw_table}")
     print(f"Upserted metadata for {ds.name}:{ds.version} ({ds.source_uri})")
 
 
