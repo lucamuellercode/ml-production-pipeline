@@ -7,3 +7,5 @@ CREATE TABLE IF NOT EXISTS metadata.datasets (
     loaded_at TIMESTAMP NOT NULL DEFAULT now(),
     UNIQUE (name, version)
 )
+
+
