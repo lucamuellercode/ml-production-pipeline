@@ -5,10 +5,16 @@ services:
       POSTGRES_USER: ${POSTGRES_SUPERUSER}
       POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS}
       POSTGRES_DB: ${POSTGRES_DEFAULT_DB}
+
+      # für init-script verfügbar
+      MLFLOW_DB: ${MLFLOW_DB}
+      MLFLOW_DB_USER: ${MLFLOW_DB_USER}
+      MLFLOW_DB_PASS: ${MLFLOW_DB_PASS}
     ports:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER} -d ${POSTGRES_DEFAULT_DB}"]
       interval: 5s
@@ -29,6 +35,54 @@ services:
       - minio_data:/data
     restart: unless-stopped
 
+  # One-shot job: create the bucket used by MLflow artifacts
+  minio_init:
+    image: minio/mc
+    depends_on:
+      - minio
+    volumes:
+      - ./infra/minio/init.sh:/init.sh:ro
+    entrypoint: ["/bin/sh", "/init.sh"]
+    environment:
+      STORAGE_ENDPOINT_URL: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    restart: "no"
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri postgresql://${MLFLOW_DB_USER}:${MLFLOW_DB_PASS}@postgres:5432/${MLFLOW_DB}
+      --default-artifact-root s3://mlflow/
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: ${STORAGE_ENDPOINT_URL}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_S3_ADDRESSING_STYLE: path
+    ports:
+      - "5000:5000"
+    depends_on:
+      - postgres
+      - minio
+      - minio_init
+    restart: unless-stopped
+
+  # Reverse proxy in front of MLflow to normalize Host header (fixes 403 "Invalid Host header")
+  mlflow_proxy:
+    image: nginx:alpine
+    depends_on:
+      - mlflow
+    ports:
+      - "5001:80"   # optional, but nice for debugging in browser
+    volumes:
+      - ./infra/nginx/mlflow.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+
+  # jobs
   lake_seed:
     build: ./services/lake_seed
     environment:
@@ -88,7 +142,7 @@ services:
       - postgres
       - minio
 
-  # DATASET (iris): transform raw -> staging
+  # DATASET (iris): transform raw -> staging/features
   iris_transform:
     build: ./services/db_bootstrap
     entrypoint: ["/app/run.sh"]
@@ -103,6 +157,31 @@ services:
       - iris_bootstrap
       - warehouse_loader
 
+  iris_train:
+    build: ./services/iris_train
+    environment:
+      # Warehouse Postgres
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_SUPERUSER}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS}
+      POSTGRES_DB: ${POSTGRES_DEFAULT_DB}
+
+      # MLflow (use proxy, NOT host.docker.internal)
+      MLFLOW_TRACKING_URI: http://mlflow_proxy
+      MLFLOW_S3_ENDPOINT_URL: ${STORAGE_ENDPOINT_URL}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_S3_ADDRESSING_STYLE: path
+
+      # Training config
+      FEATURE_TABLE: features.iris_features
+      TARGET_COL: target
+      MLFLOW_EXPERIMENT: iris
+    depends_on:
+      - postgres
+      - mlflow_proxy
 
 volumes:
   postgres_data:
