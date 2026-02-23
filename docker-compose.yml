@@ -101,7 +101,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS}
       POSTGRES_DB: ${POSTGRES_DEFAULT_DB}
     volumes:
-      - ./infra/postgres/00_platform:/sql:ro
+      - ./sql/platform:/sql:ro
     depends_on:
       - postgres
 
@@ -114,7 +114,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS}
       POSTGRES_DB: ${POSTGRES_DEFAULT_DB}
     volumes:
-      - ./infra/postgres/10_datasets/iris/tables:/sql:ro
+      - ./sql/datasets/iris/tables:/sql:ro
     depends_on:
       - postgres
 
@@ -151,7 +151,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS}
       POSTGRES_DB: ${POSTGRES_DEFAULT_DB}
     volumes:
-      - ./infra/postgres/10_datasets/iris/transforms:/sql:ro
+      - ./sql/datasets/iris/transforms:/sql:ro
     depends_on:
       - postgres
       - iris_bootstrap
@@ -178,7 +178,9 @@ services:
       # Training config
       FEATURE_TABLE: features.iris_features
       TARGET_COL: target
+      DROP_COLUMNS: row_id
       MLFLOW_EXPERIMENT: iris
+      REGISTERED_MODEL_NAME: IrisClassifier
     depends_on:
       - postgres
       - mlflow_proxy

@@ -6,6 +6,5 @@ CREATE TABLE IF NOT EXISTS metadata.datasets (
     row_count INTEGER,
     loaded_at TIMESTAMP NOT NULL DEFAULT now(),
     UNIQUE (name, version)
-)
-
+);
 

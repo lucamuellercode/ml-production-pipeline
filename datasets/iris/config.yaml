@@ -1,0 +1,29 @@
+dataset_name: iris
+version: v1
+
+storage:
+  bucket: datasets
+  key: iris/v1/iris.csv
+
+warehouse:
+  raw_table: raw.iris
+  staging_table: staging.iris_clean
+  feature_table: features.iris_features
+  target_column: target
+  drop_columns:
+    - row_id
+
+training:
+  model_type: logistic_regression
+  solver: lbfgs
+  max_iter: 1000
+  test_size: 0.2
+  random_state: 42
+
+contracts:
+  required_feature_columns:
+    - sepal_length_cm
+    - sepal_width_cm
+    - petal_length_cm
+    - petal_width_cm
+    - target

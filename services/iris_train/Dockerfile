@@ -10,5 +10,5 @@ RUN pip install --no-cache-dir \
     boto3 \
     matplotlib
 
-COPY train.py /app/train.py
+COPY . /app
 CMD ["python", "/app/train.py"]

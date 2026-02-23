@@ -1,81 +1,53 @@
 # ml-production-pipeline
 
-A simple, reproducible machine learning production pipeline template (using **Iris** as the minimal example).
+Reusable local ML pipeline template for learning and demos.
 
-This repository starts a **local ML infrastructure using Docker**:
+It shows a full lifecycle:
 
-- **PostgreSQL** → warehouse (raw/staging/features) + metadata
-- **MinIO** → object storage (local S3)
-- **lake_seed** job → uploads a sample dataset to MinIO (defaults to Iris)
+- ingest dataset from object storage
+- load and transform in warehouse
+- train and evaluate model
+- track runs and artifacts in MLflow
 
-> **Important:** In this template, **Postgres + MinIO** are long-running services.  
-> Everything else (`*_bootstrap`, `warehouse_loader`, `*_transform`, `lake_seed`) are **one-shot jobs** that should be executed **sequentially**.
+## Golden path
 
----
-
-
-## Repository layout (current)
-
+```text
+MinIO (datasets) -> warehouse_loader -> Postgres raw
+Postgres raw -> iris_transform -> Postgres staging/features
+Postgres features -> iris_train -> MLflow metrics/artifacts/model
 ```
+
+## Repository layout
+
+```text
+.
+├── datasets/
+│   ├── iris/config.yaml
+│   └── TEMPLATE.config.yaml
+├── docs/
+│   ├── architecture.md
+│   └── learning-path.md
+├── infra/
+│   ├── minio/
+│   ├── nginx/
+│   └── postgres/init/
+├── services/
+│   ├── db_bootstrap/
+│   ├── iris_train/
+│   ├── lake_seed/
+│   └── warehouse_loader/
+├── sql/
+│   ├── platform/
+│   └── datasets/iris/
+│       ├── tables/
+│       └── transforms/
 ├── docker-compose.yml
-├── infra
-│   ├── minio
-│   │   └── init.sh
-│   ├── nginx
-│   │   └── mlflow.conf
-│   └── postgres
-│       ├── 00_platform
-│       │   ├── 00_schemas.sql
-│       │   └── 10_metadata_tables.sql
-│       ├── 10_datasets
-│       │   └── iris
-│       │       ├── tables
-│       │       │   ├── 20_raw_iris.sql
-│       │       │   └── 30_staging_iris.sql
-│       │       └── transforms
-│       │           ├── 40_transform_iris.sql
-│       │           └── 50_features_iris.sql
-│       └── init
-│           └── 05_create_mlflow_db.sh
-├── README.md
-└── services
-    ├── db_bootstrap
-    │   ├── Dockerfile
-    │   └── run.sh
-    ├── iris_train
-    │   ├── Dockerfile
-    │   └── train.py
-    ├── lake_seed
-    │   ├── Dockerfile
-    │   └── seed.py
-    └── warehouse_loader
-        ├── Dockerfile
-        └── loader.py
-
+└── README.md
 ```
 
----
+## Environment
 
-
-
-## How to run (Iris example)
-
-### 1) Prerequisites
-
-Install:
-
-- Docker
-- Docker Compose
-
----
-
-### 2) Create a `.env` file
-
-In the project root create a file named:
-
-`./.env`
-
-Add the following content (replace passwords):
+Create `.env` from `.env.example` and set passwords.
 
 ```env
 POSTGRES_SUPERUSER=warehouse_user
@@ -90,304 +62,93 @@ MLFLOW_S3_ENDPOINT_URL=${STORAGE_ENDPOINT_URL}
 MLFLOW_DB=mlflow
 MLFLOW_DB_USER=mlflow_user
 MLFLOW_DB_PASS=your_strong_password
+
+FEATURE_TABLE=features.iris_features
+TARGET_COL=target
+DROP_COLUMNS=row_id
+MLFLOW_EXPERIMENT=iris
+REGISTERED_MODEL_NAME=IrisClassifier
 ```
 
----
+## Run the end-to-end Iris pipeline
 
-### 3) Start the infrastructure
-
-Start only the infrastructure services:
+1. Start platform services:
 
 ```bash
-docker compose up -d postgres minio
-docker compose ps
+docker compose up -d postgres minio minio_init mlflow mlflow_proxy
 ```
 
-Services will be available at:
-
-**PostgreSQL:** `localhost:5433`  
-**MinIO S3 API:** `http://localhost:9000`  
-**MinIO Web UI:** `http://localhost:9001`
-
----
-
-### 4) Upload the dataset (Iris demo)
-
-Build & run the seed job:
+2. Run one-shot jobs in order:
 
 ```bash
-docker compose build lake_seed
-docker compose run --rm lake_seed
-```
-
-The job will:
-
-- create bucket **datasets** if missing
-- upload **iris/v1/iris.csv**
-- skip upload if it already exists
-
----
-
-### 5) Bootstrap the database (schemas + tables)
-
-These are run as **jobs** (one-shot). Run them **in order**:
-
-```bash
-docker compose build platform_bootstrap
-docker compose run --rm platform_bootstrap
-
-docker compose build iris_bootstrap
-docker compose run --rm iris_bootstrap
-```
-
-What this does:
-
-- `platform_bootstrap` creates global schemas and metadata tables
-- `iris_bootstrap` creates dataset-specific tables for Iris (e.g. `raw.iris`, `staging.iris_clean`)
-
----
-
-### 6) Load raw data into Postgres
-
-Run the loader job:
-
-```bash
-docker compose build warehouse_loader
-docker compose run --rm warehouse_loader
-```
-
-Default configuration loads:
-
-- `s3://datasets/iris/v1/iris.csv` → `raw.iris`
-
-The loader is dataset-agnostic via env vars:
-
-- `DATASET_BUCKET` (default: `datasets`)
-- `DATASET_KEY` (default: `iris/v1/iris.csv`)
-- `DATASET_NAME` (default: `iris`)
-- `DATASET_VERSION` (default: `v1`)
-- `RAW_SCHEMA` (default: `raw`)
-- `RAW_TABLE` (default: `${DATASET_NAME}`)
-
----
-
-### 7) Run transforms (raw → staging/features)
-
-Run the transform job:
-
-```bash
-docker compose build iris_transform
-docker compose run --rm iris_transform
-```
-
-This executes all SQL files mounted into `/sql` from:
-
-```
-infra/postgres/10_datasets/iris/transforms/
-```
-
----
-
-### 8) View the dataset in MinIO
-
-Open the MinIO web interface:
-
-`http://localhost:9001`
-
-Login using credentials from `.env`.
-
-Navigate to:
-
-`datasets → iris → v1 → iris.csv`
-
----
-
-### 9) Stop the services
-
-Stop containers:
-
-```bash
-docker compose down
-```
-
-Reset everything (delete data):
-
-```bash
-docker compose down -v
-```
-
----
-
-## One-line rebuild (Iris)
-
-This is the deterministic “clean rebuild” flow:
-
-```bash
-docker compose down -v
-docker compose up -d postgres minio
 docker compose run --rm lake_seed
 docker compose run --rm platform_bootstrap
 docker compose run --rm iris_bootstrap
 docker compose run --rm warehouse_loader
 docker compose run --rm iris_transform
-```
-
-> Transforms are executed via the generic SQL runner (`db_bootstrap`) using the dataset-specific service e.g. :`iris_transform`.
-
-@Todo: In the future we can add profiles to `docker-compose.yml` to group related services and simplify this flow.
----
-
-## Adding a new dataset (example: `cars`)
-
-The template expects each dataset to provide:
-
-- SQL to create raw/staging tables
-- SQL transforms (raw → staging/features)
-- A loader configuration (S3 key + target raw table)
-
-### 1) Add SQL folders
-
-Create:
-
-```
-infra/postgres/10_datasets/cars/
-  tables/
-  transforms/
-```
-
-Add your SQL files (example naming):
-
-- `infra/postgres/10_datasets/cars/tables/20_raw_cars.sql`
-- `infra/postgres/10_datasets/cars/tables/30_staging_cars.sql`
-- `infra/postgres/10_datasets/cars/transforms/40_transform_cars.sql`
-
-> Use numeric prefixes (`20_`, `30_`, `40_`) to control execution order.
-
----
-
-### 2) Add dataset services to `docker-compose.yml`
-
-Add two new job services (copy from `iris_bootstrap` / `iris_transform` and adjust mounts):
-
-```yaml
-cars_bootstrap:
-  build: ./services/db_bootstrap
-  entrypoint: ["/app/run.sh"]
-  environment:
-    POSTGRES_USER: ${POSTGRES_SUPERUSER}
-    POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS}
-    POSTGRES_DB: ${POSTGRES_DEFAULT_DB}
-  volumes:
-    - ./infra/postgres/10_datasets/cars/tables:/sql:ro
-  depends_on:
-    - postgres
-
-cars_transform:
-  build: ./services/db_bootstrap
-  entrypoint: ["/app/run.sh"]
-  environment:
-    POSTGRES_USER: ${POSTGRES_SUPERUSER}
-    POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS}
-    POSTGRES_DB: ${POSTGRES_DEFAULT_DB}
-  volumes:
-    - ./infra/postgres/10_datasets/cars/transforms:/sql:ro
-  depends_on:
-    - postgres
-    - cars_bootstrap
-    - warehouse_loader
-```
-
----
-
-### 3) Upload your dataset to MinIO
-
-Option A: upload via MinIO UI or `mc` client to a key like:
-
-- `cars/v1/cars.csv`
-
-Option B: reuse `lake_seed` by overriding env vars (still produces Iris by default, but key/bucket are configurable):
-
-```bash
-docker compose run --rm   -e DATASET_BUCKET=datasets   -e DATASET_KEY=cars/v1/cars.csv   lake_seed
-```
-
-@Todo: In the future we will create am more generic seed job that can support different datasets more easily. 
-
----
-
-### 4) Run the new dataset pipeline
-
-```bash
-docker compose run --rm platform_bootstrap
-docker compose run --rm cars_bootstrap
-
-docker compose run --rm   -e DATASET_NAME=cars   -e DATASET_KEY=cars/v1/cars.csv   -e RAW_TABLE=cars   warehouse_loader
-
-docker compose run --rm cars_transform
-```
-
----
-
-
-## Notes / conventions
-
-- `services/db_bootstrap` is the **generic SQL runner**:
-  - It executes all `*.sql` in `/sql`
-  - It fails fast if `/sql` is empty (so missing mounts are caught immediately)
-- Dataset-specific behavior lives in:
-  - `infra/postgres/10_datasets/<dataset>/tables/`
-  - `infra/postgres/10_datasets/<dataset>/transforms/`
-- Loader is configured via environment variables and writes to `raw.<dataset>` by default.
-
-
----
-
-
-# TL;DR
-
-```bash
-# ===============================
-# 1) Alles sauber down (inkl. Volumes)
-# ===============================
-docker compose down -v --remove-orphans
-
-# Optional: auch ungenutzte Images entfernen
-docker image prune -f
-
-
-# ===============================
-# 2) Alles sauber up (richtige Reihenfolge)
-# ===============================
-
-# A) Basisdienste starten (Postgres + MinIO)
-docker compose up -d postgres minio
-
-# Status prüfen (warten bis Postgres "healthy")
-docker compose ps
-
-
-# B) MinIO Buckets anlegen (mlflow + datasets)
-# Wichtig, sonst: NoSuchBucket-Fehler
-docker compose run --rm -T minio_init
-
-
-# C) MLflow starten (+ optional Proxy)
-docker compose up -d mlflow mlflow_proxy
-
-# Health Check
-curl -I http://localhost:5000/health
-# falls über Proxy/Nginx:
-curl -I http://localhost:80/health
-
-
-# D) Warehouse / SQL Schritte
-docker compose run --rm platform_bootstrap
-docker compose run --rm iris_bootstrap
-docker compose run --rm warehouse_loader
-docker compose run --rm iris_transform
-
-
-# E) Training starten (erstellt neuen Run)
 docker compose run --rm iris_train
-
 ```
+
+3. Verify:
+
+- MLflow UI: `http://localhost:5001`
+- MinIO UI: `http://localhost:9001`
+- Postgres tables: `raw.iris`, `staging.iris_clean`, `features.iris_features`, `metadata.datasets`
+
+## SQL organization
+
+- Platform SQL: `sql/platform`
+- Dataset SQL: `sql/datasets/<dataset>/tables` and `sql/datasets/<dataset>/transforms`
+
+Naming convention:
+
+- `10_*` raw definitions
+- `20_*` staging definitions
+- `30_*` features definitions
+- `40_*` raw -> staging transforms
+- `50_*` staging -> features transforms
+
+## Training service design
+
+`services/iris_train` is now modular:
+
+- `config.py`: typed env/config contract
+- `data_sources.py`: data loading adapters
+- `pipeline.py`: feature prep, split, train, evaluate
+- `artifacts.py`: confusion matrix/report/histogram artifacts
+- `mlflow_logger.py`: MLflow integration only
+- `train.py`: orchestration entrypoint
+
+This structure is intended to be copied for new datasets/models.
+
+## Add a new dataset
+
+1. Copy `datasets/TEMPLATE.config.yaml` -> `datasets/<name>/config.yaml`
+2. Add SQL files:
+   - `sql/datasets/<name>/tables/*.sql`
+   - `sql/datasets/<name>/transforms/*.sql`
+3. Add compose services `<name>_bootstrap` and `<name>_transform`
+4. Run loader with overrides:
+
+```bash
+docker compose run --rm \
+  -e DATASET_NAME=<name> \
+  -e DATASET_KEY=<name>/v1/data.csv \
+  -e RAW_TABLE=<name> \
+  warehouse_loader
+```
+
+5. Train with overrides:
+
+```bash
+docker compose run --rm \
+  -e FEATURE_TABLE=features.<name>_features \
+  -e TARGET_COL=target \
+  iris_train
+```
+
+## Next planned extensions
+
+- Prefect orchestration for scheduled/data-aware runs
+- FastAPI serving service
+- Prometheus + Grafana observability stack
