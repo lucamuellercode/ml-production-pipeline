@@ -19,25 +19,39 @@ This repository starts a **local ML infrastructure using Docker**:
 ```
 ├── docker-compose.yml
 ├── infra
-│   └── postgres
-│       ├── 00_platform
-│       │   ├── 00_schemas.sql
-│       │   └── 10_metadata_tables.sql
-│       └── 10_datasets
-│           └── iris
-│               ├── tables
-│               └── transforms
+│   ├── minio
+│   │   └── init.sh
+│   ├── nginx
+│   │   └── mlflow.conf
+│   └── postgres
+│       ├── 00_platform
+│       │   ├── 00_schemas.sql
+│       │   └── 10_metadata_tables.sql
+│       ├── 10_datasets
+│       │   └── iris
+│       │       ├── tables
+│       │       │   ├── 20_raw_iris.sql
+│       │       │   └── 30_staging_iris.sql
+│       │       └── transforms
+│       │           ├── 40_transform_iris.sql
+│       │           └── 50_features_iris.sql
+│       └── init
+│           └── 05_create_mlflow_db.sh
 ├── README.md
 └── services
     ├── db_bootstrap
-    │   ├── Dockerfile
-    │   └── run.sh
+    │   ├── Dockerfile
+    │   └── run.sh
+    ├── iris_train
+    │   ├── Dockerfile
+    │   └── train.py
     ├── lake_seed
-    │   ├── Dockerfile
-    │   └── seed.py
+    │   ├── Dockerfile
+    │   └── seed.py
     └── warehouse_loader
         ├── Dockerfile
         └── loader.py
+
 ```
 
 ---
@@ -311,6 +325,7 @@ docker compose run --rm cars_transform
 
 ---
 
+
 ## Notes / conventions
 
 - `services/db_bootstrap` is the **generic SQL runner**:
@@ -320,3 +335,56 @@ docker compose run --rm cars_transform
   - `infra/postgres/10_datasets/<dataset>/tables/`
   - `infra/postgres/10_datasets/<dataset>/transforms/`
 - Loader is configured via environment variables and writes to `raw.<dataset>` by default.
+
+
+---
+
+
+# TL;DR
+
+```bash
+# ===============================
+# 1) Alles sauber down (inkl. Volumes)
+# ===============================
+docker compose down -v --remove-orphans
+
+# Optional: auch ungenutzte Images entfernen
+docker image prune -f
+
+
+# ===============================
+# 2) Alles sauber up (richtige Reihenfolge)
+# ===============================
+
+# A) Basisdienste starten (Postgres + MinIO)
+docker compose up -d postgres minio
+
+# Status prüfen (warten bis Postgres "healthy")
+docker compose ps
+
+
+# B) MinIO Buckets anlegen (mlflow + datasets)
+# Wichtig, sonst: NoSuchBucket-Fehler
+docker compose run --rm -T minio_init
+
+
+# C) MLflow starten (+ optional Proxy)
+docker compose up -d mlflow mlflow_proxy
+
+# Health Check
+curl -I http://localhost:5000/health
+# falls über Proxy/Nginx:
+curl -I http://localhost:80/health
+
+
+# D) Warehouse / SQL Schritte
+docker compose run --rm platform_bootstrap
+docker compose run --rm iris_bootstrap
+docker compose run --rm warehouse_loader
+docker compose run --rm iris_transform
+
+
+# E) Training starten (erstellt neuen Run)
+docker compose run --rm iris_train
+
+```
