@@ -7,7 +7,8 @@ RUN pip install --no-cache-dir \
     sqlalchemy \
     psycopg2-binary \
     scikit-learn \
-    boto3
+    boto3 \
+    matplotlib
 
 COPY train.py /app/train.py
 CMD ["python", "/app/train.py"]
