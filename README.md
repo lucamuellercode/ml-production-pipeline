@@ -123,26 +123,151 @@ This structure is intended to be copied for new datasets/models.
 
 ## Add a new dataset
 
-1. Copy `datasets/TEMPLATE.config.yaml` -> `datasets/<name>/config.yaml`
-2. Add SQL files:
-   - `sql/datasets/<name>/tables/*.sql`
-   - `sql/datasets/<name>/transforms/*.sql`
-3. Add compose services `<name>_bootstrap` and `<name>_transform`
-4. Run loader with overrides:
+Use this walkthrough for a new dataset, example: `cars`.
+
+1. Create dataset config
+
+```bash
+mkdir -p datasets/cars
+cp datasets/TEMPLATE.config.yaml datasets/cars/config.yaml
+```
+
+2. Add SQL folders
+
+```bash
+mkdir -p sql/datasets/cars/tables
+mkdir -p sql/datasets/cars/transforms
+```
+
+3. Add table SQL (example)
+
+`sql/datasets/cars/tables/10_raw_cars.sql`
+
+```sql
+CREATE TABLE IF NOT EXISTS raw.cars (
+  brand TEXT,
+  model TEXT,
+  horsepower DOUBLE PRECISION,
+  mpg DOUBLE PRECISION,
+  target INTEGER
+);
+```
+
+`sql/datasets/cars/tables/20_staging_cars.sql`
+
+```sql
+CREATE TABLE IF NOT EXISTS staging.cars_clean (
+  brand TEXT,
+  model TEXT,
+  horsepower DOUBLE PRECISION,
+  mpg DOUBLE PRECISION,
+  target INTEGER
+);
+```
+
+`sql/datasets/cars/tables/30_features_cars.sql`
+
+```sql
+CREATE TABLE IF NOT EXISTS features.cars_features (
+  row_id BIGSERIAL PRIMARY KEY,
+  horsepower DOUBLE PRECISION,
+  mpg DOUBLE PRECISION,
+  target INTEGER
+);
+```
+
+4. Add transform SQL (example)
+
+`sql/datasets/cars/transforms/40_raw_to_staging_cars.sql`
+
+```sql
+TRUNCATE TABLE staging.cars_clean;
+
+INSERT INTO staging.cars_clean (brand, model, horsepower, mpg, target)
+SELECT brand, model, horsepower, mpg, target
+FROM raw.cars;
+```
+
+`sql/datasets/cars/transforms/50_staging_to_features_cars.sql`
+
+```sql
+TRUNCATE TABLE features.cars_features;
+
+INSERT INTO features.cars_features (horsepower, mpg, target)
+SELECT horsepower, mpg, target
+FROM staging.cars_clean;
+```
+
+5. Upload dataset file to MinIO
+
+Option A: upload manually in MinIO UI (`http://localhost:9001`) to:
+
+- bucket: `datasets`
+- object key: `cars/v1/cars.csv`
+
+Option B: use `lake_seed` with key overrides (only if your `lake_seed` is adapted to your input file):
 
 ```bash
 docker compose run --rm \
-  -e DATASET_NAME=<name> \
-  -e DATASET_KEY=<name>/v1/data.csv \
-  -e RAW_TABLE=<name> \
+  -e DATASET_BUCKET=datasets \
+  -e DATASET_KEY=cars/v1/cars.csv \
+  lake_seed
+```
+
+6. Add Compose jobs for dataset SQL
+
+Add these services to `docker-compose.yml`:
+
+```yaml
+cars_bootstrap:
+  build: ./services/db_bootstrap
+  entrypoint: ["/app/run.sh"]
+  environment:
+    POSTGRES_USER: ${POSTGRES_SUPERUSER}
+    POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS}
+    POSTGRES_DB: ${POSTGRES_DEFAULT_DB}
+  volumes:
+    - ./sql/datasets/cars/tables:/sql:ro
+  depends_on:
+    - postgres
+
+cars_transform:
+  build: ./services/db_bootstrap
+  entrypoint: ["/app/run.sh"]
+  environment:
+    POSTGRES_USER: ${POSTGRES_SUPERUSER}
+    POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS}
+    POSTGRES_DB: ${POSTGRES_DEFAULT_DB}
+  volumes:
+    - ./sql/datasets/cars/transforms:/sql:ro
+  depends_on:
+    - postgres
+    - cars_bootstrap
+    - warehouse_loader
+```
+
+7. Run loader with dataset overrides
+
+```bash
+docker compose run --rm \
+  -e DATASET_NAME=cars \
+  -e DATASET_KEY=cars/v1/cars.csv \
+  -e RAW_TABLE=cars \
   warehouse_loader
 ```
 
-5. Train with overrides:
+8. Run dataset transforms
+
+```bash
+docker compose run --rm cars_bootstrap
+docker compose run --rm cars_transform
+```
+
+9. Train with overrides
 
 ```bash
 docker compose run --rm \
-  -e FEATURE_TABLE=features.<name>_features \
+  -e FEATURE_TABLE=features.cars_features \
   -e TARGET_COL=target \
   iris_train
 ```
