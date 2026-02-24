@@ -280,3 +280,8 @@ docker compose run --rm \
 - Prefect orchestration for scheduled/data-aware runs
 - FastAPI serving service
 - Prometheus + Grafana observability stack
+- Optuna hyperparameter tuning
+- More complex datasets and models (e.g. image classification with CNN)
+  - Cloud deployments (e.g. AWS Sagemaker or GCP AI Platform) for training and serving?!
+- CI/CD pipeline for automated testing and deployment
+-  DVCS integration (e.g. DVC or Git LFS) for dataset versioning and management
