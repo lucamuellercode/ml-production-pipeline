@@ -32,6 +32,8 @@ class PostgresConfig:
 
 @dataclass(frozen=True)
 class DataConfig:
+    dataset_name: str
+    dataset_version: str
     feature_table: str
     target_column: str
     drop_columns: list[str]
@@ -81,6 +83,8 @@ class TrainingAppConfig:
                 database=_required_env("POSTGRES_DB"),
             ),
             data=DataConfig(
+                dataset_name=os.getenv("DATASET_NAME", "iris"),
+                dataset_version=os.getenv("DATASET_VERSION", "v1"),
                 feature_table=os.getenv("FEATURE_TABLE", "features.iris_features"),
                 target_column=os.getenv("TARGET_COL", "target"),
                 drop_columns=_parse_csv_env("DROP_COLUMNS", "row_id"),

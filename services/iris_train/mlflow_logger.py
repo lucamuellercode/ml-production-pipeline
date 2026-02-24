@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 
 import mlflow
 import mlflow.sklearn
@@ -16,6 +17,8 @@ def log_training_run(
     *,
     mlflow_cfg: MlflowConfig,
     model,
+    dataset_name: str,
+    dataset_version: str,
     feature_table: str,
     target_col: str,
     dropped_cols: list[str],
@@ -29,7 +32,21 @@ def log_training_run(
     evaluation: EvaluationResult,
     artifact_paths: dict[str, str],
 ) -> None:
-    with mlflow.start_run():
+    run_started_at = datetime.now(timezone.utc)
+    run_name = (
+        f"{dataset_name}__{mlflow_cfg.experiment}__"
+        f"{run_started_at.strftime('%Y-%m-%dT%H-%M-%SZ')}"
+    )
+
+    with mlflow.start_run(run_name=run_name):
+        mlflow.set_tags(
+            {
+                "dataset": dataset_name,
+                "dataset_version": dataset_version,
+                "pipeline_stage": "training",
+                "last_updated_at": run_started_at.isoformat(),
+            }
+        )
         mlflow.log_param("feature_table", feature_table)
         mlflow.log_param("target_col", target_col)
         mlflow.log_param("dropped_cols", json.dumps(dropped_cols))
@@ -55,6 +72,6 @@ def log_training_run(
 
         mlflow.sklearn.log_model(
             model,
-            artifact_path="model",
+            name="model",
             registered_model_name=mlflow_cfg.registered_model_name,
         )

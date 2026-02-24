@@ -20,6 +20,12 @@ def main() -> None:
 
     cfg = TrainingAppConfig.from_env()
     configure_mlflow(cfg.mlflow)
+    logger.info(
+        "Config loaded for dataset=%s version=%s experiment=%s",
+        cfg.data.dataset_name,
+        cfg.data.dataset_version,
+        cfg.mlflow.experiment,
+    )
 
     logger.info("Loading features from table: %s", cfg.data.feature_table)
     feature_source = PostgresFeatureSource(cfg.postgres, cfg.data.feature_table)
@@ -46,6 +52,8 @@ def main() -> None:
     log_training_run(
         mlflow_cfg=cfg.mlflow,
         model=model,
+        dataset_name=cfg.data.dataset_name,
+        dataset_version=cfg.data.dataset_version,
         feature_table=cfg.data.feature_table,
         target_col=cfg.data.target_column,
         dropped_cols=[cfg.data.target_column, *cfg.data.drop_columns],
