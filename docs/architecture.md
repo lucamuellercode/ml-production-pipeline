@@ -12,6 +12,7 @@
 - `warehouse_loader` (job): loads raw data from MinIO into `raw` schema (dataset contract driven)
 - `iris_transform` (job): creates staging/features rows
 - `iris_train` (job): trains model and logs to MLflow
+- `iris_api` (service): serves Iris predictions via FastAPI (`/predict`)
 
 ## Postgres schema boundaries
 

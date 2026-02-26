@@ -113,6 +113,50 @@ docker compose run --rm iris_train
 - MinIO UI: `http://localhost:9001`
 - Postgres tables: `raw.iris`, `staging.iris_clean`, `features.iris_features`, `metadata.datasets`
 
+## Iris API (FastAPI + Pydantic)
+
+The demo API lives in `services/iris_api` and supports:
+
+- `GET /health`
+- `GET /model-info`
+- `POST /predict`
+
+Model selection is controlled via `MODEL_URI` at startup:
+
+- empty/unset `MODEL_URI` -> dummy mode (always predicts `0`)
+- set `MODEL_URI` (for example `models:/IrisClassifier/1`) -> load from MLflow
+
+Run API service:
+
+```bash
+docker compose up -d iris_api
+```
+
+Load a specific registered model version:
+
+```bash
+IRIS_API_MODEL_URI=models:/IrisClassifier/1 docker compose up -d iris_api
+```
+
+Test:
+
+```bash
+curl http://localhost:8002/model-info
+
+curl -X POST http://localhost:8002/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "records": [
+      {
+        "sepal_length_cm": 5.1,
+        "sepal_width_cm": 3.5,
+        "petal_length_cm": 1.4,
+        "petal_width_cm": 0.2
+      }
+    ]
+  }'
+```
+
 ## Dataset contracts in generic jobs
 
 - `lake_seed` and `warehouse_loader` read `datasets/<name>/config.yaml` via:

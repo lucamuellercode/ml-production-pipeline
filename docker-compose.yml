@@ -200,6 +200,22 @@ services:
       - postgres
       - mlflow_proxy
 
+  iris_api:
+    build: ./services/iris_api
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow_proxy
+      MLFLOW_S3_ENDPOINT_URL: ${STORAGE_ENDPOINT_URL}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_S3_ADDRESSING_STYLE: path
+      MODEL_URI: ${IRIS_API_MODEL_URI:-}
+    ports:
+      - "8002:8000"
+    depends_on:
+      - mlflow_proxy
+      - minio
+
 volumes:
   postgres_data:
   minio_data:
