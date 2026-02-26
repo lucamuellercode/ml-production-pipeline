@@ -89,6 +89,11 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       STORAGE_ENDPOINT_URL: ${STORAGE_ENDPOINT_URL}
+      DATASET_BUCKET: ${DATASET_BUCKET:-datasets}
+      DATASET_KEY: ${DATASET_KEY:-iris/v1/iris.csv}
+      SEED_MODE: ${SEED_MODE:-demo_iris}
+      DATASET_LOCAL_PATH: ${DATASET_LOCAL_PATH:-}
+      SEED_OVERWRITE: ${SEED_OVERWRITE:-false}
     depends_on:
       - minio
 

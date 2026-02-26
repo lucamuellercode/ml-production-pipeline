@@ -7,12 +7,7 @@ Goal: understand raw -> staging -> features -> train.
 Run:
 
 1. `docker compose up -d postgres minio`
-2. `docker compose run --rm lake_seed`
-3. `docker compose run --rm platform_bootstrap`
-4. `docker compose run --rm iris_bootstrap`
-5. `docker compose run --rm warehouse_loader`
-6. `docker compose run --rm iris_transform`
-7. `docker compose run --rm iris_train`
+2. `./scripts/iris_demo.sh` (or `make iris_demo`)
 
 Verify:
 

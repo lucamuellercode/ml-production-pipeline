@@ -64,6 +64,9 @@ MLFLOW_DB_USER=mlflow_user
 MLFLOW_DB_PASS=your_strong_password
 GIT_PYTHON_REFRESH=quiet
 
+SEED_MODE=demo_iris
+SEED_OVERWRITE=false
+
 DATASET_NAME=iris
 DATASET_VERSION=v1
 FEATURE_TABLE=features.iris_features
@@ -81,7 +84,14 @@ REGISTERED_MODEL_NAME=IrisClassifier
 docker compose up -d postgres minio minio_init mlflow mlflow_proxy
 ```
 
-2. Run one-shot jobs in order:
+2. Run the Iris demo job:
+
+```bash
+./scripts/iris_demo.sh
+# or: make iris_demo
+```
+
+Equivalent manual sequence:
 
 ```bash
 docker compose run --rm lake_seed
@@ -97,6 +107,12 @@ docker compose run --rm iris_train
 - MLflow UI: `http://localhost:5001`
 - MinIO UI: `http://localhost:9001`
 - Postgres tables: `raw.iris`, `staging.iris_clean`, `features.iris_features`, `metadata.datasets`
+
+## lake_seed modes
+
+- `SEED_MODE=demo_iris` (default): generate Iris demo data from `sklearn` and upload to MinIO
+- `SEED_MODE=local_csv`: upload your own CSV via `DATASET_LOCAL_PATH` inside the container
+- `SEED_OVERWRITE=true`: overwrite an existing object key
 
 ## SQL organization
 
@@ -208,12 +224,15 @@ Option A: upload manually in MinIO UI (`http://localhost:9001`) to:
 - bucket: `datasets`
 - object key: `cars/v1/cars.csv`
 
-Option B: use `lake_seed` with key overrides (only if your `lake_seed` is adapted to your input file):
+Option B: use `lake_seed` in `local_csv` mode:
 
 ```bash
 docker compose run --rm \
+  -e SEED_MODE=local_csv \
   -e DATASET_BUCKET=datasets \
   -e DATASET_KEY=cars/v1/cars.csv \
+  -e DATASET_LOCAL_PATH=/data/cars.csv \
+  -v "$PWD/datasets/cars:/data:ro" \
   lake_seed
 ```
 

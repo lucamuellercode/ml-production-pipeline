@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+REPO_ROOT="$(dirname -- "$SCRIPT_DIR")"
+
+cd "$REPO_ROOT"
+
+docker compose run --rm \
+  -e SEED_MODE=demo_iris \
+  -e DATASET_BUCKET=datasets \
+  -e DATASET_KEY=iris/v1/iris.csv \
+  lake_seed
+docker compose run --rm platform_bootstrap
+docker compose run --rm iris_bootstrap
+docker compose run --rm warehouse_loader
+docker compose run --rm iris_transform
+docker compose run --rm iris_train
