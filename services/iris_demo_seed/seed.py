@@ -6,6 +6,7 @@ import boto3
 import pandas as pd
 import yaml
 from botocore.exceptions import ClientError
+from sklearn.datasets import load_iris
 
 
 def env(name: str, default: str | None = None) -> str:
@@ -40,15 +41,7 @@ class DatasetContract:
 
 
 def resolve_dataset_config_path() -> Path:
-    explicit_path = os.getenv("DATASET_CONFIG_PATH")
-    if explicit_path:
-        return Path(explicit_path)
-
-    dataset_name = os.getenv("DATASET_NAME")
-    if dataset_name:
-        return Path(f"/datasets/{dataset_name}/config.yaml")
-
-    raise RuntimeError("Set DATASET_CONFIG_PATH or DATASET_NAME for lake_seed.")
+    return Path(os.getenv("DATASET_CONFIG_PATH", "/datasets/iris/config.yaml"))
 
 
 def load_dataset_contract(path: Path) -> DatasetContract:
@@ -60,18 +53,18 @@ def load_dataset_contract(path: Path) -> DatasetContract:
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
     try:
-        dataset_name = raw["dataset_name"]
-        version = raw["version"]
-        storage_bucket = raw["storage"]["bucket"]
-        storage_key = raw["storage"]["key"]
+        dataset_name = str(raw["dataset_name"])
+        version = str(raw["version"])
+        storage_bucket = str(raw["storage"]["bucket"])
+        storage_key = str(raw["storage"]["key"])
     except KeyError as e:
         raise RuntimeError(f"Missing key in dataset config {path}: {e}") from e
 
     return DatasetContract(
-        dataset_name=str(dataset_name),
-        version=str(version),
-        storage_bucket=str(storage_bucket),
-        storage_key=str(storage_key),
+        dataset_name=dataset_name,
+        version=version,
+        storage_bucket=storage_bucket,
+        storage_key=storage_key,
     )
 
 
@@ -94,13 +87,11 @@ def object_exists(s3, bucket: str, key: str) -> bool:
         raise
 
 
-def read_local_csv(path_value: str) -> pd.DataFrame:
-    path = Path(path_value)
-    if not path.exists():
-        raise RuntimeError(f"DATASET_LOCAL_PATH does not exist: {path}")
-    if not path.is_file():
-        raise RuntimeError(f"DATASET_LOCAL_PATH is not a file: {path}")
-    return pd.read_csv(path)
+def build_iris_dataframe() -> pd.DataFrame:
+    iris = load_iris()
+    df = pd.DataFrame(iris.data, columns=iris.feature_names)
+    df["target"] = iris.target
+    return df
 
 
 def main() -> None:
@@ -111,10 +102,8 @@ def main() -> None:
 
     contract_path = resolve_dataset_config_path()
     contract = load_dataset_contract(contract_path)
-
     bucket = os.getenv("DATASET_BUCKET", contract.storage_bucket)
     key = os.getenv("DATASET_KEY", contract.storage_key)
-    local_csv_path = env("DATASET_LOCAL_PATH")
 
     s3 = boto3.client(
         "s3",
@@ -125,21 +114,19 @@ def main() -> None:
     )
 
     ensure_bucket(s3, bucket)
-
     exists = object_exists(s3, bucket, key)
     print(f"Dataset config: {contract_path}")
-    print(f"Dataset: {contract.dataset_name}:{contract.version}")
     print(f"Exists? {exists} -> s3://{bucket}/{key}")
 
     if exists and not overwrite:
         print("Skipping upload (already exists).")
         return
 
-    df = read_local_csv(local_csv_path)
     if exists and overwrite:
         print("Overwriting existing object.")
-    csv_bytes = df.to_csv(index=False).encode("utf-8")
 
+    df = build_iris_dataframe()
+    csv_bytes = df.to_csv(index=False).encode("utf-8")
     s3.put_object(
         Bucket=bucket,
         Key=key,
@@ -147,8 +134,7 @@ def main() -> None:
         ContentType="text/csv",
     )
 
-    print(f"Uploaded dataset to s3://{bucket}/{key}")
-    print(f"Source file: {local_csv_path}")
+    print(f"Uploaded Iris demo dataset to s3://{bucket}/{key}")
     print(f"Rows: {len(df)}")
 
 

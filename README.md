@@ -33,9 +33,13 @@ Postgres features -> iris_train -> MLflow metrics/artifacts/model
 │   └── postgres/init/
 ├── services/
 │   ├── db_bootstrap/
+│   ├── iris_demo_seed/
 │   ├── iris_train/
 │   ├── lake_seed/
 │   └── warehouse_loader/
+├── scripts/
+│   └── iris_demo.sh
+├── Makefile
 ├── sql/
 │   ├── platform/
 │   └── datasets/iris/
@@ -64,8 +68,9 @@ MLFLOW_DB_USER=mlflow_user
 MLFLOW_DB_PASS=your_strong_password
 GIT_PYTHON_REFRESH=quiet
 
-SEED_MODE=demo_iris
 SEED_OVERWRITE=false
+# DATASET_CONFIG_PATH=/datasets/your_dataset/config.yaml
+# DATASET_LOCAL_PATH=/datasets/your_dataset/data.csv
 
 DATASET_NAME=iris
 DATASET_VERSION=v1
@@ -94,10 +99,10 @@ docker compose up -d postgres minio minio_init mlflow mlflow_proxy
 Equivalent manual sequence:
 
 ```bash
-docker compose run --rm lake_seed
+docker compose run --rm iris_demo_seed
 docker compose run --rm platform_bootstrap
 docker compose run --rm iris_bootstrap
-docker compose run --rm warehouse_loader
+docker compose run --rm -e DATASET_CONFIG_PATH=/datasets/iris/config.yaml warehouse_loader
 docker compose run --rm iris_transform
 docker compose run --rm iris_train
 ```
@@ -108,11 +113,13 @@ docker compose run --rm iris_train
 - MinIO UI: `http://localhost:9001`
 - Postgres tables: `raw.iris`, `staging.iris_clean`, `features.iris_features`, `metadata.datasets`
 
-## lake_seed modes
+## Dataset contracts in generic jobs
 
-- `SEED_MODE=demo_iris` (default): generate Iris demo data from `sklearn` and upload to MinIO
-- `SEED_MODE=local_csv`: upload your own CSV via `DATASET_LOCAL_PATH` inside the container
-- `SEED_OVERWRITE=true`: overwrite an existing object key
+- `lake_seed` and `warehouse_loader` read `datasets/<name>/config.yaml` via:
+  - `DATASET_CONFIG_PATH` (explicit), or
+  - `DATASET_NAME` (`/datasets/<DATASET_NAME>/config.yaml`)
+- Generic jobs are dataset-agnostic and contain no Iris-specific defaults.
+- `iris_demo_seed` is the only job that contains Iris demo logic.
 
 ## SQL organization
 
@@ -150,6 +157,8 @@ Use this walkthrough for a new dataset, example: `cars`.
 mkdir -p datasets/cars
 cp datasets/TEMPLATE.config.yaml datasets/cars/config.yaml
 ```
+
+`lake_seed` and `warehouse_loader` use this config as the primary source for storage/raw table metadata.
 
 2. Add SQL folders
 
@@ -224,15 +233,12 @@ Option A: upload manually in MinIO UI (`http://localhost:9001`) to:
 - bucket: `datasets`
 - object key: `cars/v1/cars.csv`
 
-Option B: use `lake_seed` in `local_csv` mode:
+Option B: use `lake_seed` with dataset contract + local CSV:
 
 ```bash
 docker compose run --rm \
-  -e SEED_MODE=local_csv \
-  -e DATASET_BUCKET=datasets \
-  -e DATASET_KEY=cars/v1/cars.csv \
-  -e DATASET_LOCAL_PATH=/data/cars.csv \
-  -v "$PWD/datasets/cars:/data:ro" \
+  -e DATASET_CONFIG_PATH=/datasets/cars/config.yaml \
+  -e DATASET_LOCAL_PATH=/datasets/cars/cars.csv \
   lake_seed
 ```
 
@@ -268,13 +274,11 @@ cars_transform:
     - warehouse_loader
 ```
 
-7. Run loader with dataset overrides
+7. Run loader with dataset contract
 
 ```bash
 docker compose run --rm \
-  -e DATASET_NAME=cars \
-  -e DATASET_KEY=cars/v1/cars.csv \
-  -e RAW_TABLE=cars \
+  -e DATASET_CONFIG_PATH=/datasets/cars/config.yaml \
   warehouse_loader
 ```
 

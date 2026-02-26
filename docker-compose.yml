@@ -89,11 +89,22 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       STORAGE_ENDPOINT_URL: ${STORAGE_ENDPOINT_URL}
-      DATASET_BUCKET: ${DATASET_BUCKET:-datasets}
-      DATASET_KEY: ${DATASET_KEY:-iris/v1/iris.csv}
-      SEED_MODE: ${SEED_MODE:-demo_iris}
-      DATASET_LOCAL_PATH: ${DATASET_LOCAL_PATH:-}
       SEED_OVERWRITE: ${SEED_OVERWRITE:-false}
+    volumes:
+      - ./datasets:/datasets:ro
+    depends_on:
+      - minio
+
+  iris_demo_seed:
+    build: ./services/iris_demo_seed
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      STORAGE_ENDPOINT_URL: ${STORAGE_ENDPOINT_URL}
+      DATASET_CONFIG_PATH: /datasets/iris/config.yaml
+      SEED_OVERWRITE: ${SEED_OVERWRITE:-false}
+    volumes:
+      - ./datasets:/datasets:ro
     depends_on:
       - minio
 
@@ -137,12 +148,8 @@ services:
       POSTGRES_USER: ${POSTGRES_SUPERUSER}
       POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS}
       POSTGRES_DB: ${POSTGRES_DEFAULT_DB}
-
-      # Dataset (optional)
-      DATASET_BUCKET: datasets
-      DATASET_KEY: iris/v1/iris.csv
-      DATASET_NAME: iris
-      DATASET_VERSION: v1
+    volumes:
+      - ./datasets:/datasets:ro
     depends_on:
       - postgres
       - minio

@@ -5,10 +5,11 @@
 - `postgres`: warehouse + metadata + MLflow backend DB
 - `minio`: S3-compatible object storage
 - `mlflow` + `mlflow_proxy`: experiment tracking and model registry
-- `lake_seed` (job): uploads dataset to MinIO
+- `lake_seed` (job): generic CSV seed from local file -> MinIO (dataset contract driven)
+- `iris_demo_seed` (job): Iris-only demo data generator -> MinIO
 - `platform_bootstrap` (job): creates global schemas/tables
 - `iris_bootstrap` (job): creates dataset tables
-- `warehouse_loader` (job): loads raw data from MinIO into `raw` schema
+- `warehouse_loader` (job): loads raw data from MinIO into `raw` schema (dataset contract driven)
 - `iris_transform` (job): creates staging/features rows
 - `iris_train` (job): trains model and logs to MLflow
 

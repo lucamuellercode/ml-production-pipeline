@@ -6,7 +6,7 @@ Goal: understand raw -> staging -> features -> train.
 
 Run:
 
-1. `docker compose up -d postgres minio`
+1. `docker compose up -d postgres minio minio_init mlflow mlflow_proxy`
 2. `./scripts/iris_demo.sh` (or `make iris_demo`)
 
 Verify:
@@ -33,5 +33,5 @@ Focus areas:
    - `sql/datasets/<new_dataset>/tables/`
    - `sql/datasets/<new_dataset>/transforms/`
 3. Add `<new_dataset>_bootstrap` and `<new_dataset>_transform` services in `docker-compose.yml`
-4. Run `warehouse_loader` with overridden dataset env vars
+4. Run `warehouse_loader` with `DATASET_CONFIG_PATH` (or `DATASET_NAME`)
 5. Run trainer with overridden `FEATURE_TABLE` and `TARGET_COL`

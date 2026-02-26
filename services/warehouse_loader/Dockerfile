@@ -7,7 +7,7 @@ FROM python:3-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir pandas boto3 sqlalchemy psycopg2-binary
+RUN pip install --no-cache-dir pandas boto3 sqlalchemy psycopg2-binary pyyaml
 
 COPY loader.py .
 

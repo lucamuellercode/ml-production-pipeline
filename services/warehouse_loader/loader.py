@@ -1,10 +1,12 @@
-import os
 import io
+import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 import boto3
 import pandas as pd
+import yaml
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, URL
 
@@ -28,6 +30,25 @@ def ident(name: str) -> str:
     return name
 
 
+def split_schema_table(qualified_table: str) -> tuple[str, str]:
+    parts = qualified_table.split(".")
+    if len(parts) != 2:
+        raise RuntimeError(
+            f"Expected '<schema>.<table>' in dataset config, got: {qualified_table!r}"
+        )
+    return ident(parts[0]), ident(parts[1])
+
+
+@dataclass(frozen=True)
+class DatasetContract:
+    dataset_name: str
+    version: str
+    storage_bucket: str
+    storage_key: str
+    raw_schema: str
+    raw_table: str
+
+
 @dataclass(frozen=True)
 class DatasetConfig:
     bucket: str
@@ -48,11 +69,45 @@ class PostgresConfig:
     host: str = "postgres"
     port: str = "5432"
 
-    def sqlalchemy_url(self) -> str:
-        return (
-            f"postgresql+psycopg2://{self.user}:{self.password}"
-            f"@{self.host}:{self.port}/{self.db}"
-        )
+
+def resolve_dataset_config_path() -> Path:
+    explicit_path = os.getenv("DATASET_CONFIG_PATH")
+    if explicit_path:
+        return Path(explicit_path)
+
+    dataset_name = os.getenv("DATASET_NAME")
+    if dataset_name:
+        return Path(f"/datasets/{dataset_name}/config.yaml")
+
+    raise RuntimeError("Set DATASET_CONFIG_PATH or DATASET_NAME for warehouse_loader.")
+
+
+def load_dataset_contract(path: Path) -> DatasetContract:
+    if not path.exists():
+        raise RuntimeError(f"Dataset config not found: {path}")
+    if not path.is_file():
+        raise RuntimeError(f"Dataset config path is not a file: {path}")
+
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+    try:
+        dataset_name = str(raw["dataset_name"])
+        version = str(raw["version"])
+        storage_bucket = str(raw["storage"]["bucket"])
+        storage_key = str(raw["storage"]["key"])
+        raw_table_qualified = str(raw["warehouse"]["raw_table"])
+    except KeyError as e:
+        raise RuntimeError(f"Missing key in dataset config {path}: {e}") from e
+
+    raw_schema, raw_table = split_schema_table(raw_table_qualified)
+    return DatasetContract(
+        dataset_name=dataset_name,
+        version=version,
+        storage_bucket=storage_bucket,
+        storage_key=storage_key,
+        raw_schema=raw_schema,
+        raw_table=raw_table,
+    )
 
 
 def make_s3_client():
@@ -84,7 +139,6 @@ def make_engine(pg: PostgresConfig) -> Engine:
 
 
 def truncate_raw_table(engine: Engine, schema: str, table: str) -> None:
-    # schema/table must be validated identifiers (avoid SQL injection).
     schema = ident(schema)
     table = ident(table)
     with engine.begin() as conn:
@@ -92,8 +146,6 @@ def truncate_raw_table(engine: Engine, schema: str, table: str) -> None:
 
 
 def load_dataframe_to_raw(engine: Engine, df: pd.DataFrame, schema: str, table: str) -> None:
-    # df.to_sql uses SQLAlchemy safely for table creation/inserts, but schema/table still
-    # come from config -> validate identifiers.
     schema = ident(schema)
     table = ident(table)
     df.to_sql(table, engine, schema=schema, if_exists="append", index=False)
@@ -122,12 +174,12 @@ def upsert_dataset_metadata(engine: Engine, cfg: DatasetConfig, row_count: int) 
         )
 
 
-def read_dataset_config() -> DatasetConfig:
+def read_dataset_config(contract: DatasetContract) -> DatasetConfig:
     return DatasetConfig(
-        bucket=env("DATASET_BUCKET", "datasets"),
-        key=env("DATASET_KEY", "iris/v1/iris.csv"),
-        name=env("DATASET_NAME", "iris"),
-        version=env("DATASET_VERSION", "v1"),
+        bucket=os.getenv("DATASET_BUCKET", contract.storage_bucket),
+        key=os.getenv("DATASET_KEY", contract.storage_key),
+        name=os.getenv("DATASET_NAME", contract.dataset_name),
+        version=os.getenv("DATASET_VERSION", contract.version),
     )
 
 
@@ -141,33 +193,28 @@ def read_postgres_config() -> PostgresConfig:
     )
 
 
-def read_raw_target() -> tuple[str, str]:
-    """
-    Where to load the dataframe in the warehouse.
-    Defaults:
-      RAW_SCHEMA = "raw"
-      RAW_TABLE  = DATASET_NAME
-    """
-    raw_schema = env("RAW_SCHEMA", "raw")
-    raw_table = env("RAW_TABLE", env("DATASET_NAME", "iris"))
+def read_raw_target(contract: DatasetContract) -> tuple[str, str]:
+    raw_schema = env("RAW_SCHEMA", contract.raw_schema)
+    raw_table = env("RAW_TABLE", contract.raw_table)
     return ident(raw_schema), ident(raw_table)
 
 
 def main() -> None:
-    ds = read_dataset_config()
+    contract_path = resolve_dataset_config_path()
+    contract = load_dataset_contract(contract_path)
+    ds = read_dataset_config(contract)
     pg = read_postgres_config()
-    raw_schema, raw_table = read_raw_target()
+    raw_schema, raw_table = read_raw_target(contract)
 
     s3 = make_s3_client()
     df = read_csv_from_s3(s3, ds.bucket, ds.key)
 
     engine = make_engine(pg)
-
     truncate_raw_table(engine, schema=raw_schema, table=raw_table)
     load_dataframe_to_raw(engine, df, schema=raw_schema, table=raw_table)
-
     upsert_dataset_metadata(engine, ds, row_count=len(df))
 
+    print(f"Dataset config: {contract_path}")
     print(f"Loaded {len(df)} rows into {raw_schema}.{raw_table}")
     print(f"Upserted metadata for {ds.name}:{ds.version} ({ds.source_uri})")
 
