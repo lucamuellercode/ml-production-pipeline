@@ -135,15 +135,15 @@ docker compose up -d iris_api
 Load a specific registered model version:
 
 ```bash
-IRIS_API_MODEL_URI=models:/IrisClassifier/1 docker compose up -d iris_api
+MODEL_URI=models:/IrisClassifier/1 docker compose up -d iris_api
 ```
 
 Test:
 
 ```bash
-curl http://localhost:8002/model-info
+curl http://localhost:8000/model-info
 
-curl -X POST http://localhost:8002/predict \
+curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
   -d '{
     "records": [
@@ -156,6 +156,8 @@ curl -X POST http://localhost:8002/predict \
     ]
   }'
 ```
+
+Host port can be configured with `IRIS_API_PORT` (default: `8000`).
 
 ## Dataset contracts in generic jobs
 

@@ -209,9 +209,9 @@ services:
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
       AWS_DEFAULT_REGION: us-east-1
       AWS_S3_ADDRESSING_STYLE: path
-      MODEL_URI: ${IRIS_API_MODEL_URI:-}
+      MODEL_URI: ${MODEL_URI:-}
     ports:
-      - "8002:8000"
+      - "${IRIS_API_PORT:-8000}:8000"
     depends_on:
       - mlflow_proxy
       - minio
